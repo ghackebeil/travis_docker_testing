@@ -1,0 +1,47 @@
+# travis CI config
+sudo: required
+cache: false
+language: generic
+services:
+  - docker
+env:
+  matrix:
+    - IMAGE_NAME=python:2.7
+    - IMAGE_NAME=python:3.5
+    - IMAGE_NAME=python:3.6
+    - IMAGE_NAME=pypy:2
+    - IMAGE_NAME=pypy:3
+    - IMAGE_NAME=continuumio/anaconda
+    - IMAGE_NAME=continuumio/anaconda3
+before_install:
+  - docker pull ${IMAGE_NAME}
+  # (1) We are mounting the current directory onto the
+  #     docker container and giving it a mount location with
+  #     an identical name, which avoids issues with file
+  #     paths in coverage reports.
+  # (2) We are starting a container in detached mode that
+  #     runs a semi-infinite sleep call. This allows us to
+  #     run separate docker exec commands that keep the state
+  #     of the container between calls.
+  - export DOC_ID_=`docker run -d -v $(pwd):$(pwd) -w $(pwd) ${IMAGE_NAME} sleep 10000000000`
+  # used by codecov when uploading the coverage report
+  - export CI_ENV=`bash <(curl -s https://codecov.io/env)`
+  # commands prefixed by ${DOC_} will execute inside the
+  # running docker container
+  - export DOC_="docker exec ${CI_ENV} -e IMAGE_NAME ${DOC_ID_}"
+install:
+  - ${DOC_} pip install -U pip setuptools wheel
+  - ${DOC_} python --version
+  - ${DOC_} pip --version
+  - ${DOC_} pip install -r requirements.txt
+  - ${DOC_} pip install codecov
+  # If this was a real Python package, we would install the
+  # package next. Note that by installing in develop mode,
+  # pytest will correctly track coverage of any subprocesses
+  # launched during the tests.
+  # - ${DOC_} python setup.py develop
+script:
+  - ${DOC_} pytest -v --cov=tests
+after_script:
+  - ${DOC_} codecov --env IMAGE_NAME
+  - docker kill ${DOC_ID_}
